@@ -1,0 +1,81 @@
+---
+title: "3. K-prototype Gower"
+output: pdf_document
+date: "2024-07-19"
+---
+```{r}
+library(clustMixType)
+library(ggplot2)
+library(dplyr)
+library(arrow)
+```
+
+
+```{r}
+# Load the train and test data
+seed_num <- 2024
+data_dir <- "../Model and Data/Data/"
+model_dir <- "../Model and Data/Model/"
+
+# Ensure directories exist
+if (!dir.exists(data_dir)) {
+    dir.create(data_dir, recursive = TRUE)
+}
+if (!dir.exists(model_dir)) {
+    dir.create(model_dir, recursive = TRUE)
+}
+```
+
+
+```{r}
+# Function to perform k-prototypes clustering with Gower distance and save results
+perform_kproto_clustering_gower <- function(k, X_train, X_test, categorical_vars, seed_num, data_dir, model_dir) {
+  model <- kproto(X_train, k, type = "gower", nstart = 30, keep.data = TRUE, categorical = categorical_vars)
+  
+  # Save the model
+  saveRDS(model, file = file.path(model_dir, paste0("kproto_model_gower_k", k, "_seed_", seed_num, ".rds")))
+  
+  # Debugging: Check model clusters
+  print(paste("Clusters for k =", k, "in X_train:"))
+  print(table(model$cluster))
+  
+  # Predict clusters for X_train and X_test
+  X_train_clustered <- X_train
+  X_test_clustered <- X_test
+  X_train_clustered$K_Prototypes_clusterings <- model$cluster
+  
+  # Debugging: Check the prediction process
+  print("Predicting clusters for X_test...")
+  
+  # Extract predicted clusters and distances
+  predicted_clusters <- predict(model, newdata = X_test)
+  X_test_clustered$K_Prototypes_clusterings <- predicted_clusters$cluster
+  
+  # Save the prediction results
+  saveRDS(predicted_clusters, file = file.path(model_dir, paste0("prediction_gower_c", k, ".rds")))
+  
+  print("Prediction completed.")
+  
+  # Save the clustered data
+  write_parquet(X_train_clustered, file.path(data_dir, paste0("X_train_proto_gower_c", k, "_seed_", seed_num, ".parquet")))
+  write_parquet(X_test_clustered, file.path(data_dir, paste0("X_test_proto_gower_c", k, "_seed_", seed_num, ".parquet")))
+}
+
+```
+
+
+```{r}
+# Perform clustering for k = 2 to 10
+for (k in 2:10) {
+  perform_kproto_clustering_gower(k, X_train, X_test, categorical_vars, seed_num, data_dir, model_dir)
+}
+
+```
+
+
+```{r}
+for (k in 11:20) {
+  perform_kproto_clustering_gower(k, X_train, X_test, categorical_vars, seed_num, data_dir, model_dir)
+}
+```
+

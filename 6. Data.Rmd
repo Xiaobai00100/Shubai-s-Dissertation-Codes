@@ -1,0 +1,72 @@
+---
+title: "1. Data"
+output: pdf_document
+date: "2024-07-25"
+---
+```{r}
+library(arrow)
+library(dplyr)
+library(ggplot2)
+library(DataExplorer)
+library(FactoMineR)
+library(factoextra)
+```
+
+```{r}
+# Set the number of significant digits to display
+options(digits = 15)
+
+# Set the seed number
+seed_num <- 2024
+
+# Set the number of significant digits to display
+options(digits = 15)
+
+# Define the directory
+data_dir <- "../Model and Data/Data/"
+model_dir <- "../Model and Data/Model/"
+
+# Read the Parquet files
+X_train <- read_parquet(file.path(data_dir, paste0("X_train_", seed_num, ".parquet")))
+X_test <- read_parquet(file.path(data_dir, paste0("X_test_", seed_num, ".parquet")))
+y_train <- read_parquet(file.path(data_dir, paste0("y_train_", seed_num, ".parquet")))
+y_test <- read_parquet(file.path(data_dir, paste0("y_test_", seed_num, ".parquet")))
+
+X_train <- as.data.frame(X_train)
+X_test <- as.data.frame(X_test)
+
+# Display the structure of the data to verify
+str(X_train)
+str(y_train)
+```
+
+```{r}
+# Define Categorical columns
+categorical_vars <- c("MARITALSTATUS", "NOOFCHILDREN", "HOMEOWNERIND", "VEHICLE_LEFTORRIGHTHANDDRIVE", "DRIVER1_LICENCETYPE", "DRIVER2_LICENCETYPE", "DRIVER3_LICENCETYPE", "DRIVER4_LICENCETYPE", "DRIVER1_OTHERVEHICLEOWNEDIND", "DRIVER2_OTHERVEHICLEOWNEDIND", "DRIVER3_OTHERVEHICLEOWNEDIND", "DRIVER4_OTHERVEHICLEOWNEDIND", "MONTHLYPAYMENTSIND", "VEHICLE_USE_TYPE", "VEHICLEOVERNIGHTLOCATION", "VEHICLE_OWNERSHIP", "VEHICLE_MODIFIEDIND", "VEHICLE_BODYTYPE", "VEHICLE_FUELTYPE", "VEHICLE_TRANSMISSIONTYPE", "INDICATOR_NRCONVICTIONS_RECENT", "INDICATOR_CLAIMSCOUNT_RECENT")
+# It is notable that we include `NOOFCHILDREN` as a categorical column
+
+if (!all(names(X_train) == names(X_test))) {
+  stop("Columns of X_train and X_test do not match!")
+}
+
+# Convert columns to appropriate types
+convert_columns <- function(data, categorical_vars) {
+  data <- data %>%
+    mutate(across(all_of(categorical_vars), as.factor)) %>%
+    mutate(across(!all_of(categorical_vars), ~as.numeric(as.character(.))))
+  return(data)
+}
+
+# Convert columns in X_train and X_test
+X_train <- convert_columns(X_train, categorical_vars)
+X_test <- convert_columns(X_test, categorical_vars)
+
+# Ensure the levels of the factors are consistent between X_train and X_test
+for (col in categorical_vars) {
+  all_levels <- union(levels(X_train[[col]]), levels(X_test[[col]]))
+  X_train[[col]] <- factor(X_train[[col]], levels = all_levels)
+  X_test[[col]] <- factor(X_test[[col]], levels = all_levels)
+}
+
+```
+

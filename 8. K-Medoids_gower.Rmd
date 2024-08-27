@@ -1,0 +1,150 @@
+---
+title: "2. K-Medoids_gower"
+output: html_document
+date: "2024-07-24"
+---
+```{r}
+# Load necessary libraries
+library(kmed)
+library(tibble)
+library(dplyr)
+library(arrow)
+```
+
+```{r}
+seed_num <- 2024
+data_dir <- "../Model and Data/Data/"
+model_dir <- "../Model and Data/Model/"
+if (!dir.exists(data_dir)) {
+    dir.create(data_dir, recursive = TRUE)
+}
+if (!dir.exists(model_dir)) {
+    dir.create(model_dir, recursive = TRUE)
+}
+```
+
+```{r}
+# Define the binary and categorical columns
+binary_columns <- c("NOOFCHILDREN", "HOMEOWNERIND", "VEHICLE_LEFTORRIGHTHANDDRIVE", "DRIVER1_OTHERVEHICLEOWNEDIND", "MONTHLYPAYMENTSIND", "VEHICLE_MODIFIEDIND", "VEHICLE_FUELTYPE", "VEHICLE_TRANSMISSIONTYPE", "INDICATOR_NRCONVICTIONS_RECENT", "INDICATOR_CLAIMSCOUNT_RECENT")
+categorical_columns <- c("MARITALSTATUS", "DRIVER1_LICENCETYPE", "DRIVER2_LICENCETYPE", "DRIVER3_LICENCETYPE", "DRIVER4_LICENCETYPE", "DRIVER2_OTHERVEHICLEOWNEDIND", "DRIVER3_OTHERVEHICLEOWNEDIND", "DRIVER4_OTHERVEHICLEOWNEDIND", "VEHICLE_USE_TYPE", "VEHICLEOVERNIGHTLOCATION", "VEHICLE_OWNERSHIP", "VEHICLE_BODYTYPE")
+
+# Get all columns in the data frame
+all_columns <- colnames(X_train)
+# Subtract binary and categorical columns to get numerical columns
+numerical_columns <- setdiff(all_columns, c(binary_columns, categorical_columns))
+
+# Ensure the columns are factors for categorical and binary columns
+for (col in binary_columns) {
+  X_train[[col]] <- as.factor(X_train[[col]])
+  X_test[[col]] <- as.factor(X_test[[col]])
+}
+for (col in categorical_columns) {
+  X_train[[col]] <- as.factor(X_train[[col]])
+  X_test[[col]] <- as.factor(X_test[[col]])
+}
+
+```
+
+```{r}
+
+# Function to perform k-medoids clustering and save results
+perform_kmedoids_clustering <- function(k, X_train, X_test, numerical_columns, binary_columns, categorical_columns, seed_num, data_dir, model_dir) {
+  # Start timing for the entire process
+  total_start_time <- Sys.time()
+  
+  # Start timing for distance matrix calculation
+  start_time <- Sys.time()
+  
+  # Get all columns in the data frame
+  all_columns <- colnames(X_train)
+  
+  # Calculate the distance matrix using Harikumar method on the training data
+  dist_matrix_train <- distmix(X_train[, all_columns], method = "gower", 
+                               idnum = match(numerical_columns, all_columns), 
+                               idbin = match(binary_columns, all_columns), 
+                               idcat = match(categorical_columns, all_columns))
+  
+  # End timing for distance matrix calculation
+  end_time <- Sys.time()
+  distance_matrix_time <- end_time - start_time
+  print(paste("Distance matrix calculation time:", distance_matrix_time))
+  
+  # Start timing for K-medoids clustering
+  start_time <- Sys.time()
+  
+  # Apply the simple k-medoids algorithm
+  skm_result <- skm(dist_matrix_train, ncluster = k, seeding = seed_num, iterate = 10)
+  
+  # End timing for K-medoids clustering
+  end_time <- Sys.time()
+  clustering_time <- end_time - start_time
+  print(paste("K-medoids clustering time:", clustering_time))
+  
+  # Start timing for prediction and saving results
+  start_time <- Sys.time()
+  
+  # Assign clusters to the training data
+  X_train$K_Medoids_Clusters <- skm_result$cluster
+  
+  # Save the clustered training data
+  write_parquet(X_train, file.path(data_dir, paste0("X_train_skm_gower_c", k, "_seed_", seed_num, ".parquet")))
+  
+  # Extract medoid indices from training result
+  medoid_indices <- skm_result$medoid
+  
+  # Subset medoids from the training data
+  medoids <- X_train[medoid_indices, ]
+  
+  # Ensure that X_test has the same columns as medoids
+  common_columns <- intersect(colnames(medoids), colnames(X_test))
+  X_test <- X_test[, common_columns, drop = FALSE]
+  medoids <- medoids[, common_columns, drop = FALSE]
+  
+  # Calculate the distance matrix for the test data to the medoids using Harikumar method
+  distances_to_medoids <- matrix(NA, nrow = nrow(X_test), ncol = length(medoid_indices))
+  for (i in seq_along(medoid_indices)) {
+    medoid_data <- rbind(medoids[i, ], X_test)
+    dist_matrix <- distmix(medoid_data[, common_columns], method = "gower", 
+                           idnum = match(numerical_columns, common_columns), 
+                           idbin = match(binary_columns, common_columns), 
+                           idcat = match(categorical_columns, common_columns))
+    distances_to_medoids[, i] <- dist_matrix[-1, 1]  # Get distances to the medoid
+  }
+  
+  # Assign clusters based on the nearest medoid
+  predicted_clusters <- apply(distances_to_medoids, 1, which.min)
+  
+  # Assign predicted clusters to the test data
+  X_test$K_Medoids_Clusters <- predicted_clusters
+  
+  # Save the clustered test data
+  write_parquet(X_test, file.path(data_dir, paste0("X_test_skm_gower_c", k, "_seed_", seed_num, ".parquet")))
+  
+  # Save the clustering model
+  saveRDS(skm_result, file = file.path(model_dir, paste0("skm_model_gower_c", k, "_seed_", seed_num, ".rds")))
+  
+  # Optional: Save the predicted clusters
+  saveRDS(predicted_clusters, file = file.path(model_dir, paste0("predicted_clusters_gower_c", k, "_seed_", seed_num, ".rds")))
+  
+  # End timing for prediction and saving results
+  end_time <- Sys.time()
+  prediction_saving_time <- end_time - start_time
+  print(paste("Prediction and saving time:", prediction_saving_time))
+  
+  # End timing for the entire process
+  total_end_time <- Sys.time()
+  total_time <- total_end_time - total_start_time
+  print(paste("Total time for k =", k, ":", total_time))
+}
+
+
+```
+
+
+```{r}
+for (k in 2:10) {
+  perform_kmedoids_clustering(k, X_train, X_test, numerical_columns, binary_columns, categorical_columns, seed_num, data_dir, model_dir)
+}
+
+```
+
